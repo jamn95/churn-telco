@@ -159,7 +159,7 @@ if enviado:
                     unsafe_allow_html=True)
         st.progress(prob)
         k1, k2, k3 = st.columns(3)
-        k1.metric("Clase predicha", "Churn = Yes" if clase else "Churn = No")
+        k1.metric("Clase predicha (Churn)", "Yes" if clase else "No")
         k2.metric("Nivel de riesgo", nivel)
         k3.metric("Umbral", f"{umbral:.0%}")
 
@@ -175,12 +175,13 @@ if enviado:
         aporte = contribuciones(modelo, X_nuevo)
         if aporte is not None:
             st.subheader("¿Qué explica esta predicción?")
-            st.caption("Aporte de cada variable al riesgo (log-odds). Rojo aumenta el riesgo; verde lo reduce.")
+            st.caption("Aporte de cada variable al riesgo (log-odds), comparado con un cliente promedio. "
+                       "Rojo aumenta el riesgo; verde lo reduce.")
             top = pd.concat([aporte.head(5), aporte.tail(5)]).drop_duplicates()
             tabla = pd.DataFrame({"Variable": top.index, "Aporte": np.round(top.values, 3)})
             grafico = alt.Chart(tabla).mark_bar().encode(
                 x=alt.X("Aporte:Q", title="Aporte al log-odds"),
-                y=alt.Y("Variable:N", sort="-x", title=None),
+                y=alt.Y("Variable:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)),
                 color=alt.condition("datum.Aporte > 0", alt.value("#C0392B"), alt.value("#1E8449")),
                 tooltip=["Variable", "Aporte"],
             ).properties(height=320)
