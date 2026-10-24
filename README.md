@@ -17,13 +17,15 @@ Ejercicio 2: comparación de 5 clasificadores supervisados para predecir el aban
 
 | Modelo | Accuracy | Precision | Recall | F1-Score | ROC-AUC |
 |---|---|---|---|---|---|
-| **Logistic Regression** | 0.7374 | 0.5034 | **0.7968** | **0.6170** | **0.8399** |
+| **Logistic Regression** | 0.7367 | 0.5025 | **0.7968** | **0.6163** | **0.8399** |
 | KNN | 0.6962 | 0.4534 | 0.7032 | 0.5514 | 0.7685 |
 | SVM | **0.7559** | **0.5295** | 0.7193 | 0.6100 | 0.8192 |
 | Decision Tree | 0.7197 | 0.4754 | 0.5428 | 0.5069 | 0.6630 |
 | Naive Bayes | 0.6962 | 0.4596 | 0.8209 | 0.5893 | 0.8066 |
 
-ANOVA sobre 10 folds de validación cruzada: F1-Score F = 74.72, p = 2.76e-19, por lo que se rechaza H₀. Tukey HSD: Logistic Regression es significativamente superior en ROC-AUC a los otros 4 modelos.
+ANOVA sobre 10 folds de validación cruzada: F1-Score F = 72.20, p = 5.37e-19, por lo que se rechaza H₀. Tukey HSD: Logistic Regression es significativamente superior en ROC-AUC a los otros 4 modelos.
+
+Salidas generadas con el entorno de Colab (Python 3.13, scikit-learn 1.6.1). Al re-ejecutar en otro entorno, algunas métricas pueden variar en el tercer decimal sin que cambien las conclusiones.
 
 ## Ejecutar la app localmente
 
