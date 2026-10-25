@@ -1,6 +1,6 @@
-# Predicción de Abandono de Clientes (Customer Churn) — Telco
+# Predicción de Abandono de Clientes (Customer Churn) - Telco
 
-Ejercicio 2: comparación de 5 clasificadores supervisados para predecir el abandono de clientes en una empresa de telecomunicaciones, selección del mejor con ANOVA + Tukey HSD y sistema de predicción de nuevos clientes.
+Ejercicio 2: comparación de 5 clasificadores supervisados para predecir el abandono de clientes en una empresa de telecomunicaciones, validación estadística (ANOVA exploratorio, prueba de Friedman y t-test corregido de Nadeau y Bengio con Holm), calibración de probabilidades y sistema de predicción de nuevos clientes.
 
 **Dataset:** [Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn) (7.043 clientes, 21 variables), cargado desde el [mirror público de IBM](https://github.com/IBM/telco-customer-churn-on-icp4d).
 
@@ -8,24 +8,26 @@ Ejercicio 2: comparación de 5 clasificadores supervisados para predecir el aban
 
 | Archivo | Descripción |
 |---|---|
-| `Churn_Telco_Prediccion.ipynb` | Cuaderno completo (Colab): negocio, EDA, preprocesamiento, SMOTE, 5 modelos, métricas, ANOVA, selección, sistema de predicción e interpretación. |
+| `JAMN_Churn_Telco_Prediccion_Corregido.ipynb` | Cuaderno completo (Colab): negocio, EDA, preprocesamiento, SMOTENC, 5 modelos, métricas, pruebas estadísticas, selección, calibración, sistema de predicción e interpretación. |
 | `app.py` | App web en Streamlit para predecir el churn de un cliente nuevo. |
-| `modelo_churn.pkl` | Pipeline final (OneHotEncoder + StandardScaler + Logistic Regression) generado por el cuaderno. |
-| `metadata_churn.json` | Variables, opciones, valores por defecto y métricas del modelo. |
+| `modelo_churn.pkl` | Modelo final: Regresión Logística (StandardScaler + SMOTENC + One-Hot) con probabilidades calibradas (`CalibratedClassifierCV`, sigmoid). |
+| `metadata_churn.json` | Variables, opciones, valores por defecto, umbral y métricas del modelo. |
 
-## Resultados (conjunto de prueba, 1.409 clientes)
+Abrir en Colab: https://colab.research.google.com/github/jamn95/churn-telco/blob/main/JAMN_Churn_Telco_Prediccion_Corregido.ipynb
+
+## Resultados (conjunto de prueba, 1.409 clientes, clase Churn = Yes)
 
 | Modelo | Accuracy | Precision | Recall | F1-Score | ROC-AUC |
 |---|---|---|---|---|---|
-| **Logistic Regression** | 0.7367 | 0.5025 | **0.7968** | **0.6163** | **0.8399** |
-| KNN | 0.6962 | 0.4534 | 0.7032 | 0.5514 | 0.7685 |
-| SVM | **0.7559** | **0.5295** | 0.7193 | 0.6100 | 0.8192 |
-| Decision Tree | 0.7197 | 0.4754 | 0.5428 | 0.5069 | 0.6630 |
-| Naive Bayes | 0.6962 | 0.4596 | 0.8209 | 0.5893 | 0.8066 |
+| **Logistic Regression** | 0.7381 | 0.5044 | **0.7647** | **0.6079** | **0.8327** |
+| KNN | 0.7175 | 0.4786 | 0.7166 | 0.5739 | 0.7757 |
+| SVM | **0.7537** | **0.5265** | 0.7166 | 0.6070 | 0.8185 |
+| Decision Tree | 0.7168 | 0.4733 | 0.5936 | 0.5267 | 0.6783 |
+| Naive Bayes | 0.7381 | 0.5045 | 0.7540 | 0.6045 | 0.8198 |
 
-ANOVA sobre 10 folds de validación cruzada: F1-Score F = 72.20, p = 5.37e-19, por lo que se rechaza H₀. Tukey HSD: Logistic Regression es significativamente superior en ROC-AUC a los otros 4 modelos.
+Validación cruzada de 10 folds: la prueba de Friedman rechaza H₀ en F1 (p = 1.36e-06) y en ROC-AUC (p = 1.08e-07). Con el t-test corregido y Holm, la Regresión Logística es significativamente mejor que los otros 4 modelos en ROC-AUC; en F1 no se diferencia significativamente de SVM ni de Naive Bayes.
 
-Salidas generadas con el entorno de Colab (Python 3.13, scikit-learn 1.6.1). Al re-ejecutar en otro entorno, algunas métricas pueden variar en el tercer decimal sin que cambien las conclusiones.
+Salidas generadas con el entorno de Colab (Python 3.13, scikit-learn 1.6.1). Al re-ejecutar en otro entorno, algunas métricas pueden variar en el tercer decimal sin que cambien las conclusiones. El modelo de la app se generó con el mismo cuaderno usando scikit-learn 1.9.1.
 
 ## Ejecutar la app localmente
 

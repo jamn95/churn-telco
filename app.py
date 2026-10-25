@@ -1,13 +1,14 @@
 """App Streamlit: predicción de abandono de clientes (Telco Customer Churn).
 
-Carga el pipeline (preprocesamiento + modelo) y los metadatos generados por
-el cuaderno Churn_Telco_Prediccion.ipynb. Incluye exploración del dataset y
-comparación de los 5 modelos evaluados.
+Carga el modelo calibrado (pipeline + calibración) y los metadatos generados por
+el cuaderno JAMN_Churn_Telco_Prediccion_Corregido.ipynb. Incluye exploración del
+dataset y comparación de los 5 modelos evaluados.
 """
 import json
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -39,19 +40,9 @@ ETIQUETAS = {
     "PaymentMethod": "Método de pago",
 }
 
-# Resultados de la validación cruzada (10 folds) del cuaderno: (media, desviación)
-CV = {
-    "Logistic Regression": {"Accuracy": (0.7542, 0.0178), "Precision": (0.5247, 0.0233), "Recall": (0.7953, 0.0361),
-                            "F1-Score": (0.6320, 0.0250), "ROC-AUC": (0.8460, 0.0151)},
-    "SVM": {"Accuracy": (0.7668, 0.0111), "Precision": (0.5467, 0.0176), "Recall": (0.7191, 0.0285),
-            "F1-Score": (0.6207, 0.0131), "ROC-AUC": (0.8252, 0.0115)},
-    "Naive Bayes": {"Accuracy": (0.7043, 0.0177), "Precision": (0.4688, 0.0177), "Recall": (0.8408, 0.0250),
-                    "F1-Score": (0.6017, 0.0154), "ROC-AUC": (0.8201, 0.0149)},
-    "KNN": {"Accuracy": (0.6913, 0.0121), "Precision": (0.4501, 0.0136), "Recall": (0.7325, 0.0290),
-            "F1-Score": (0.5573, 0.0156), "ROC-AUC": (0.7599, 0.0098)},
-    "Decision Tree": {"Accuracy": (0.7270, 0.0159), "Precision": (0.4885, 0.0283), "Recall": (0.5365, 0.0187),
-                      "F1-Score": (0.5108, 0.0169), "ROC-AUC": (0.6666, 0.0119)},
-}
+MENSAJES = {"ALTO": "Cliente con alta probabilidad de abandono",
+            "MEDIO": "Cliente con probabilidad moderada de abandono",
+            "BAJO": "Cliente con baja probabilidad de abandono"}
 
 st.set_page_config(page_title="Predicción de Churn - Telco", layout="wide")
 
@@ -98,23 +89,20 @@ def cargar_dataset():
 
 # ------------------------------------------------------------------ utilidades
 def ajustar_consistencia(cliente):
-    # Evita perfiles imposibles (p. ej. sin internet pero con soporte técnico)
+    # Mismas recodificaciones que la limpieza del cuaderno: sin internet o sin teléfono -> "No"
     for s in SERVICIOS_INTERNET:
-        if cliente["InternetService"] == "No":
-            cliente[s] = "No internet service"
-        elif cliente[s] == "No internet service":
+        if cliente["InternetService"] == "No" or cliente[s] == "No internet service":
             cliente[s] = "No"
-    if cliente["PhoneService"] == "No":
-        cliente["MultipleLines"] = "No phone service"
-    elif cliente["MultipleLines"] == "No phone service":
+    if cliente["PhoneService"] == "No" or cliente["MultipleLines"] == "No phone service":
         cliente["MultipleLines"] = "No"
     return cliente
 
 
-def nivel_riesgo(prob):
-    if prob >= 0.70:
+def nivel_riesgo(prob, umbral):
+    # Criterio del cuaderno (sección 9.5) sobre la probabilidad calibrada
+    if prob >= 0.5:
         return "ALTO"
-    if prob >= 0.40:
+    if prob >= umbral:
         return "MEDIO"
     return "BAJO"
 
@@ -136,16 +124,19 @@ def recomendaciones(c):
     return acciones
 
 
-def contribuciones(modelo, X_nuevo):
-    # Solo para modelos lineales: aporte de cada variable al log-odds
-    clf = modelo.named_steps["modelo"]
+def contribuciones(modelo, X_nuevo, media):
+    # Aporte de cada variable original al log-odds frente al cliente promedio (solo modelos lineales)
+    pipe = modelo.calibrated_classifiers_[0].estimator
+    clf = pipe.named_steps["modelo"]
     if not hasattr(clf, "coef_"):
         return None
-    prep = modelo.named_steps["prep"]
-    valores = prep.transform(X_nuevo)[0]
-    nombres = [n.replace("num__", "").replace("cat__", "") for n in prep.get_feature_names_out()]
-    aporte = pd.Series(clf.coef_[0] * valores, index=nombres)
-    return aporte[aporte != 0].sort_values()
+    codificar = pipe.named_steps["codificar"]
+    valores = codificar.transform(pipe.named_steps["escalar"].transform(X_nuevo))[0]
+    originales = [n.split("_")[0] for n in codificar.get_feature_names_out()]
+    aporte = pd.Series(clf.coef_[0] * (valores - np.asarray(media)), index=originales).groupby(level=0).sum()
+    fila = X_nuevo.iloc[0]
+    aporte.index = [f"{v} = {fila[v]:g}" if isinstance(fila[v], float) else f"{v} = {fila[v]}" for v in aporte.index]
+    return aporte.sort_values()
 
 
 def estilo(fig, alto=380, leyenda=False):
@@ -201,7 +192,8 @@ NUM_COLS, CAT_COLS = meta["num_cols"], meta["cat_cols"]
 with st.sidebar:
     st.subheader("Modelo en producción")
     st.write(f"**{meta['modelo']}**")
-    st.caption("One-Hot + StandardScaler, entrenado con SMOTE. Métricas en el conjunto de prueba (1.409 clientes):")
+    st.caption("StandardScaler + SMOTENC + One-Hot, con probabilidades calibradas. "
+               "Métricas en el conjunto de prueba (1.409 clientes, clase Churn = Yes):")
     m = meta["metricas_test"]
     c1, c2 = st.columns(2)
     c1.metric("Recall", f"{m['Recall']:.1%}")
@@ -210,8 +202,9 @@ with st.sidebar:
     c2.metric("Precision", f"{m['Precision']:.1%}")
     st.metric("Accuracy", f"{m['Accuracy']:.1%}")
     st.divider()
-    umbral = st.slider("Umbral de decisión", 0.10, 0.90, float(meta["umbral"]), 0.05,
-                       help="Probabilidad a partir de la cual el cliente se clasifica como 'abandona'. "
+    umbral = st.slider("Umbral de decisión", 0.05, 0.90, round(float(meta["umbral"]), 2), 0.01,
+                       help="Probabilidad calibrada a partir de la cual el cliente se clasifica como 'abandona'. "
+                            f"El valor por defecto ({meta['umbral']:.0%}) reproduce el modelo evaluado en el cuaderno. "
                             "Subirlo aumenta la Precision; bajarlo aumenta el Recall.")
     st.caption("Dataset: Telco Customer Churn (IBM / Kaggle), 7.043 clientes.")
 
@@ -229,7 +222,7 @@ with tab_pred:
         st.markdown("##### Variables principales")
         a, b = st.columns(2)
         tenure = a.number_input("Tenure (meses de permanencia)", 0, 72, 5)
-        monthly = b.number_input("MonthlyCharges (cargo mensual, $)", 18.0, 120.0, 95.0, step=0.5)
+        monthly = b.number_input("MonthlyCharges (cargo mensual, u.m.)", 18.0, 120.0, 95.0, step=0.5)
         a, b, c = st.columns(3)
         iniciales = {"Contract": "Month-to-month", "TechSupport": "No", "InternetService": "Fiber optic"}
         valores = {}
@@ -245,7 +238,7 @@ with tab_pred:
                 ops = opciones[nombre]
                 valores[nombre] = cols[i % 3].selectbox(f"{nombre} ({ETIQUETAS[nombre]})", ops,
                                                         index=ops.index(defaults[nombre]))
-            total = st.number_input("TotalCharges (0 = estimar como tenure x MonthlyCharges)", 0.0, 9000.0, 0.0)
+            total = st.number_input("TotalCharges (0 = aproximar como tenure x MonthlyCharges)", 0.0, 9000.0, 0.0)
 
         enviado = st.form_submit_button("Predecir", type="primary", width="stretch")
 
@@ -259,7 +252,7 @@ with tab_pred:
         X_nuevo = pd.DataFrame([cliente])[NUM_COLS + CAT_COLS]
         prob = float(modelo.predict_proba(X_nuevo)[0, 1])
         clase = int(prob >= umbral)
-        nivel = nivel_riesgo(prob)
+        nivel = nivel_riesgo(prob, umbral)
         acento = RIESGO[nivel]
 
         st.write("")
@@ -272,23 +265,25 @@ with tab_pred:
                 gauge=dict(
                     axis=dict(range=[0, 100], tickcolor="#6b7080", ticksuffix="%"),
                     bar=dict(color=acento, thickness=0.32), bgcolor="#161a24", borderwidth=0,
-                    steps=[dict(range=[0, 40], color="rgba(12,163,12,.16)"),
-                           dict(range=[40, 70], color="rgba(250,178,25,.16)"),
-                           dict(range=[70, 100], color="rgba(208,59,59,.18)")],
+                    steps=[dict(range=[0, umbral * 100], color="rgba(12,163,12,.16)"),
+                           dict(range=[umbral * 100, 50], color="rgba(250,178,25,.16)"),
+                           dict(range=[50, 100], color="rgba(208,59,59,.18)")],
                     threshold=dict(line=dict(color=TINTA, width=3), thickness=0.85, value=umbral * 100),
                 ),
             ))
             grafico(estilo(gauge, alto=290))
 
-            texto = ("Cliente con ALTA probabilidad de abandono" if clase
-                     else "Cliente con BAJA probabilidad de abandono")
+            nota_total = ("<div class='similares'>TotalCharges no se ingresó: se aproximó como "
+                          "tenure x MonthlyCharges.</div>" if total <= 0 else "")
             st.markdown(
                 f"<div class='resultado' style='--acento:{acento}'>"
-                f"<h3>Predicción: {texto}</h3>"
-                f"<div>Probabilidad estimada: <b style='font-size:1.3rem;color:{TINTA}'>{prob:.0%}</b> "
+                f"<h3>Predicción: {MENSAJES[nivel]}</h3>"
+                f"<div>Probabilidad estimada (calibrada): <b style='font-size:1.3rem;color:{TINTA}'>{prob:.0%}</b> "
                 f"&nbsp; <span class='chip'>Riesgo {nivel}</span></div>"
                 f"<div class='similares'>Clase predicha: <b>Churn = {'Yes' if clase else 'No'}</b> "
-                f"(umbral {umbral:.0%}; la línea blanca del indicador marca el umbral)</div></div>",
+                f"(umbral de decisión {umbral:.0%}, marcado con la línea blanca). "
+                f"ALTO: 50 % o más; MEDIO: desde el umbral hasta 50 %; BAJO: debajo del umbral.</div>"
+                f"{nota_total}</div>",
                 unsafe_allow_html=True)
 
             df = cargar_dataset()
@@ -302,11 +297,12 @@ with tab_pred:
                     f"<b>{similares['churn'].mean():.0%}</b> de ellos abandonó.</div>", unsafe_allow_html=True)
 
         with der:
-            aporte = contribuciones(modelo, X_nuevo)
+            aporte = contribuciones(modelo, X_nuevo, meta["media_codificada"])
             if aporte is not None:
                 st.markdown("##### ¿Qué explica esta predicción?")
-                st.caption("Aporte de cada variable al riesgo frente a un cliente promedio. "
-                           "Rojo aumenta el riesgo; azul lo reduce.")
+                st.caption("Aporte de cada variable al riesgo frente al cliente promedio del entrenamiento. "
+                           "Rojo aumenta el riesgo; azul lo reduce. Describe cómo decide el modelo, no causas. "
+                           "tenure y TotalCharges están correlacionadas y deben leerse juntas.")
                 top = pd.concat([aporte.head(5), aporte.tail(5)])
                 top = top[~top.index.duplicated()].sort_values()
                 fig = go.Figure(go.Bar(
@@ -319,7 +315,8 @@ with tab_pred:
 
             acciones = recomendaciones(cliente)
             if clase and acciones:
-                st.markdown("##### Acciones de retención sugeridas")
+                st.markdown("##### Acciones de retención a evaluar")
+                st.caption("Basadas en variables asociadas al churn; su efecto debe medirse con un grupo de control.")
                 for x in acciones:
                     st.markdown(f"- {x}")
             elif not clase:
@@ -337,9 +334,10 @@ with tab_datos:
     k1, k2, k3, k4 = st.columns(4)
     kpi(k1, "Clientes", miles(len(df)), "registros en el dataset", "#00c2ff")
     kpi(k2, "Tasa de abandono", f"{tasa_global:.1f}%", f"{miles(df['churn'].sum())} clientes se fueron", COLOR_YES)
-    kpi(k3, "Facturación mensual perdida", f"${miles(perdida)}",
-        f"{perdida / df['MonthlyCharges'].sum():.1%} de la facturación total", "#ff4b8b")
-    kpi(k4, "Pérdida anual estimada", f"${perdida * 12 / 1e6:.2f} M", "si no se retiene a ninguno", "#7c5cff")
+    kpi(k3, "Facturación mensual de quienes abandonaron", f"{miles(perdida)} u.m.",
+        f"{perdida / df['MonthlyCharges'].sum():.1%} de la facturación mensual total", "#ff4b8b")
+    kpi(k4, "Proyección a 12 meses", f"{perdida * 12 / 1e6:.2f} M u.m.",
+        "supuesto: 12 meses más con la misma factura", "#7c5cff")
     st.write("")
 
     c1, c2 = st.columns([1.35, 1], gap="large")
@@ -368,7 +366,7 @@ with tab_datos:
 
     st.markdown("##### Clientes que abandonan frente a clientes que se quedan")
     c3, c4 = st.columns(2, gap="large")
-    for col_ui, var, titulo, inicio, paso in [(c3, "MonthlyCharges", "Cargo mensual ($)", 10, 10),
+    for col_ui, var, titulo, inicio, paso in [(c3, "MonthlyCharges", "Cargo mensual (u.m.)", 10, 10),
                                               (c4, "tenure", "Meses de permanencia", 0, 6)]:
         with col_ui:
             fig = go.Figure()
@@ -389,6 +387,7 @@ with tab_modelos:
     st.markdown("##### Desempeño de los 5 modelos (validación cruzada estratificada, 10 folds)")
     metrica = st.radio("Métrica", ["F1-Score", "ROC-AUC", "Recall", "Precision", "Accuracy"],
                        horizontal=True, label_visibility="collapsed")
+    CV = meta["cv"]
     orden = sorted(CV, key=lambda n: -CV[n][metrica][0])
     medias = [CV[n][metrica][0] for n in orden]
     desv = [CV[n][metrica][1] for n in orden]
@@ -403,13 +402,18 @@ with tab_modelos:
     grafico(estilo(fig, alto=380))
     st.caption("Barra resaltada: modelo seleccionado. Las líneas indican la desviación estándar entre los 10 folds.")
 
+    chi, p_friedman = meta["friedman"][metrica]
     a, b, c = st.columns(3)
-    kpi(a, "ANOVA (F1-Score)", "F = 72,20", "p-value = 5,37e-19", "#00c2ff")
-    kpi(b, "Decisión", "Se rechaza H₀", "sí hay diferencias significativas entre modelos", "#ff4b8b")
-    kpi(c, "Tukey HSD (ROC-AUC)", "LR es el mejor", "significativamente superior a los otros 4", "#7c5cff")
+    kpi(a, f"Friedman ({metrica})", f"Chi2 = {chi:.2f}", f"p-value = {p_friedman:.2e}", "#00c2ff")
+    kpi(b, "Decisión (alfa = 0,05)", "Se rechaza H₀" if p_friedman < 0.05 else "No se rechaza H₀",
+        "al menos un modelo rinde distinto" if p_friedman < 0.05 else "no se detectan diferencias", "#ff4b8b")
+    kpi(c, "t-test corregido + Holm", "LR mejor en ROC-AUC",
+        "significativo frente a los otros 4; en F1 empata con SVM y Naive Bayes", "#7c5cff")
     st.write("")
     st.markdown(
-        "**¿Por qué Regresión Logística?** Tiene el mejor F1 y el mejor ROC-AUC, casi no sobreajusta "
-        "(brecha train-test < 0,02) y es la más interpretable: cada coeficiente se traduce en un *odds ratio* "
-        "que el área de marketing puede entender. SVM empata en F1, pero es significativamente peor en ROC-AUC "
-        "y en Recall. Naive Bayes detecta más clientes que abandonan, a costa de muchas más falsas alarmas.")
+        "**¿Por qué Regresión Logística?** Tiene la mejor media en F1, ROC-AUC y Recall, y es el único modelo que "
+        "supera de forma significativa a los otros 4 en ROC-AUC. Casi no sobreajusta y es la más interpretable: "
+        "cada coeficiente se traduce en un *odds ratio* frente a una categoría de referencia. En F1 no hay una "
+        "diferencia significativa frente a SVM ni Naive Bayes, así que la elección también se apoya en la "
+        "interpretabilidad y en el Recall. La prueba de Friedman respeta que los 5 modelos se evaluaron sobre los "
+        "mismos folds; el ANOVA del cuaderno se usa solo como análisis exploratorio.")
