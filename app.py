@@ -27,7 +27,7 @@ ETIQUETAS = {
     "PaymentMethod": "Método de pago",
 }
 
-st.set_page_config(page_title="Predicción de Churn · Telco", page_icon="📉", layout="wide")
+st.set_page_config(page_title="Predicción de Churn · Telco", layout="wide")
 
 
 @st.cache_resource
@@ -110,7 +110,7 @@ with st.sidebar:
     st.caption("Dataset: Telco Customer Churn (IBM / Kaggle).")
 
 # ---------------------------------------------------------------- formulario
-st.title("📉 Predicción de abandono de clientes")
+st.title("Predicción de abandono de clientes")
 st.write("Ingrese los datos del cliente para estimar la **probabilidad de abandono** y la **clase predicha**.")
 
 with st.form("cliente"):
