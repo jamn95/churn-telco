@@ -53,7 +53,7 @@ CV = {
                       "F1-Score": (0.5108, 0.0169), "ROC-AUC": (0.6666, 0.0119)},
 }
 
-st.set_page_config(page_title="Predicción de Churn · Telco", layout="wide")
+st.set_page_config(page_title="Predicción de Churn - Telco", layout="wide")
 
 st.markdown("""
 <style>
@@ -217,7 +217,7 @@ with st.sidebar:
 
 # ------------------------------------------------------------------ encabezado
 st.markdown("<div class='hero'><h1>Predicción de abandono de clientes</h1>"
-            "<p>Telecomunicaciones · Customer Churn · Modelo de Regresión Logística</p></div>",
+            "<p>Telecomunicaciones | Customer Churn | Modelo de Regresión Logística</p></div>",
             unsafe_allow_html=True)
 st.write("")
 
@@ -235,7 +235,7 @@ with tab_pred:
         valores = {}
         for col, nombre in zip((a, b, c), PRINCIPALES):
             ops = opciones[nombre]
-            valores[nombre] = col.selectbox(f"{nombre} · {ETIQUETAS[nombre]}", ops,
+            valores[nombre] = col.selectbox(f"{nombre} ({ETIQUETAS[nombre]})", ops,
                                             index=ops.index(iniciales[nombre]))
 
         with st.expander("Otras variables (opcional: si no se cambian se usa el valor más frecuente)"):
@@ -243,9 +243,9 @@ with tab_pred:
             cols = st.columns(3)
             for i, nombre in enumerate(otras):
                 ops = opciones[nombre]
-                valores[nombre] = cols[i % 3].selectbox(f"{nombre} · {ETIQUETAS[nombre]}", ops,
+                valores[nombre] = cols[i % 3].selectbox(f"{nombre} ({ETIQUETAS[nombre]})", ops,
                                                         index=ops.index(defaults[nombre]))
-            total = st.number_input("TotalCharges (0 = estimar como tenure × MonthlyCharges)", 0.0, 9000.0, 0.0)
+            total = st.number_input("TotalCharges (0 = estimar como tenure x MonthlyCharges)", 0.0, 9000.0, 0.0)
 
         enviado = st.form_submit_button("Predecir", type="primary", width="stretch")
 
@@ -298,7 +298,7 @@ with tab_pred:
             if len(similares) >= 10:
                 st.markdown(
                     f"<div class='similares'>En el dataset hay <b>{miles(len(similares))}</b> clientes con el mismo "
-                    f"contrato, el mismo servicio de internet y una permanencia de ±6 meses: el "
+                    f"contrato, el mismo servicio de internet y una permanencia parecida (hasta 6 meses de diferencia): el "
                     f"<b>{similares['churn'].mean():.0%}</b> de ellos abandonó.</div>", unsafe_allow_html=True)
 
         with der:
@@ -348,7 +348,7 @@ with tab_datos:
         variable = st.selectbox("Variable", ["Contract", "InternetService", "PaymentMethod", "TechSupport",
                                              "OnlineSecurity", "SeniorCitizen", "PaperlessBilling",
                                              "Partner", "Dependents", "gender"],
-                                format_func=lambda v: f"{v} · {ETIQUETAS[v]}", label_visibility="collapsed")
+                                format_func=lambda v: f"{v} ({ETIQUETAS[v]})", label_visibility="collapsed")
         t = tasa_por(df, variable)
         grafico(barras_tasa(t, variable, tasa_global))
         with st.expander("Ver tabla"):
@@ -404,7 +404,7 @@ with tab_modelos:
     st.caption("Barra resaltada: modelo seleccionado. Las líneas indican la desviación estándar entre los 10 folds.")
 
     a, b, c = st.columns(3)
-    kpi(a, "ANOVA (F1-Score)", "F = 72,20", "p-value = 5,37·10⁻¹⁹", "#00c2ff")
+    kpi(a, "ANOVA (F1-Score)", "F = 72,20", "p-value = 5,37e-19", "#00c2ff")
     kpi(b, "Decisión", "Se rechaza H₀", "sí hay diferencias significativas entre modelos", "#ff4b8b")
     kpi(c, "Tukey HSD (ROC-AUC)", "LR es el mejor", "significativamente superior a los otros 4", "#7c5cff")
     st.write("")
